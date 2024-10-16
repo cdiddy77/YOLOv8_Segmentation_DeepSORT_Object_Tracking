@@ -1,5 +1,6 @@
 # Ultralytics YOLO 🚀, GPL-3.0 license
 
+import json
 import hydra
 import torch
 
@@ -167,6 +168,10 @@ def draw_boxes(img, bbox, names, object_id, identities=None, offset=(0, 0)):
 
 class SegmentationPredictor(DetectionPredictor):
 
+    def __init__(self, cfg):
+        super().__init__(cfg, {"save": False, "show": False})
+        self.deepsort_outputs = []
+
     def postprocess(self, preds, img, orig_img):
         masks = []
         # TODO: filter by classes
@@ -246,20 +251,21 @@ class SegmentationPredictor(DetectionPredictor):
             )
 
         # Mask plotting
-        self.annotator.masks(
-            mask,
-            colors=[colors(x, True) for x in det[:, 5]],
-            im_gpu=(
-                torch.as_tensor(im0, dtype=torch.float16)
-                .to(self.device)
-                .permute(2, 0, 1)
-                .flip(0)
-                .contiguous()
-                / 255
-                if self.args.retina_masks
-                else im[idx]
-            ),
-        )
+        if self.args.save or self.args.save_crop or self.args.show:
+            self.annotator.masks(
+                mask,
+                colors=[colors(x, True) for x in det[:, 5]],
+                im_gpu=(
+                    torch.as_tensor(im0, dtype=torch.float16)
+                    .to(self.device)
+                    .permute(2, 0, 1)
+                    .flip(0)
+                    .contiguous()
+                    / 255
+                    if self.args.retina_masks
+                    else im[idx]
+                ),
+            )
 
         det = reversed(det[:, :6])
         self.all_outputs.append([det, mask])
@@ -282,9 +288,27 @@ class SegmentationPredictor(DetectionPredictor):
             bbox_xyxy = outputs[:, :4]
             identities = outputs[:, -2]
             object_id = outputs[:, -1]
-
-            draw_boxes(im0, bbox_xyxy, self.model.names, object_id, identities)
+            if self.args.save or self.args.save_crop or self.args.show:
+                draw_boxes(im0, bbox_xyxy, self.model.names, object_id, identities)
+            self.deepsort_outputs.append(
+                {
+                    "bbox_xyxy": bbox_xyxy.tolist(),
+                    "identities": identities.tolist(),
+                    "object_id": object_id.tolist(),
+                }
+            )
         return log_string
+
+    def save_deepsort_outputs(self, filename="deepsort_outputs.json"):
+        with open(filename, "w") as f:
+            json.dump(
+                {
+                    "object_id_names": list(self.model.names.values()),
+                    "frames": self.deepsort_outputs,
+                },
+                f,
+                indent=2,
+            )
 
 
 @hydra.main(
@@ -297,10 +321,11 @@ def predict(cfg):
     cfg.model = cfg.model or "yolov8n-seg.pt"
     cfg.imgsz = check_imgsz(cfg.imgsz, min_dim=2)  # check image size
     # cfg.source = cfg.source if cfg.source is not None else ROOT / "assets"
-    cfg.source = "test1.mp4"
+    cfg.source = "/Users/charlesparker/github/YOLOv8_Segmentation_DeepSORT_Object_Tracking/ungitable/test1.mp4"
 
     predictor = SegmentationPredictor(cfg)
     predictor()
+    predictor.save_deepsort_outputs()
 
 
 if __name__ == "__main__":
