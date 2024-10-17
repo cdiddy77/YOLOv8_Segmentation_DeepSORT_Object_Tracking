@@ -60,6 +60,9 @@ visualize: False # visualize results
 augment: False # apply data augmentation to images
 agnostic_nms: False # class-agnostic NMS
 retina_masks: False # use retina masks for object detection
+focus_identity: null # only draw box on specified identity
+max_frames: -1 # maximum number of frames to process in a video
+deepsort_outputs_filename: "deepsort_outputs.json" # filename for deepsort outputs
 
 # Export settings ------------------------------------------------------------------------------------------------------
 format: torchscript # format to export to

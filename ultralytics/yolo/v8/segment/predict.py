@@ -122,7 +122,9 @@ def UI_box(x, img, color=None, label=None, line_thickness=None):
         )
 
 
-def draw_boxes(img, bbox, names, object_id, identities=None, offset=(0, 0)):
+def draw_boxes(
+    img, bbox, names, object_id, identities=None, offset=(0, 0), focus_identity=None
+):
     # cv2.line(img, line[0], line[1], (46,162,112), 3)
 
     height, width, _ = img.shape
@@ -153,23 +155,26 @@ def draw_boxes(img, bbox, names, object_id, identities=None, offset=(0, 0)):
 
         # add center to buffer
         data_deque[id].appendleft(center)
-        UI_box(box, img, label=label, color=color, line_thickness=2)
-        # draw trail
-        for i in range(1, len(data_deque[id])):
-            # check if on buffer value is none
-            if data_deque[id][i - 1] is None or data_deque[id][i] is None:
-                continue
-            # generate dynamic thickness of trails
-            thickness = int(np.sqrt(64 / float(i + i)) * 1.5)
-            # draw trails
-            cv2.line(img, data_deque[id][i - 1], data_deque[id][i], color, thickness)
+        if focus_identity is None or id == focus_identity:
+            UI_box(box, img, label=label, color=color, line_thickness=2)
+            # draw trail
+            for i in range(1, len(data_deque[id])):
+                # check if on buffer value is none
+                if data_deque[id][i - 1] is None or data_deque[id][i] is None:
+                    continue
+                # generate dynamic thickness of trails
+                thickness = int(np.sqrt(64 / float(i + i)) * 1.5)
+                # draw trails
+                cv2.line(
+                    img, data_deque[id][i - 1], data_deque[id][i], color, thickness
+                )
     return img
 
 
 class SegmentationPredictor(DetectionPredictor):
 
     def __init__(self, cfg):
-        super().__init__(cfg, {"save": False, "show": False})
+        super().__init__(cfg, {"save": True, "show": False})
         self.deepsort_outputs = []
 
     def postprocess(self, preds, img, orig_img):
@@ -251,7 +256,9 @@ class SegmentationPredictor(DetectionPredictor):
             )
 
         # Mask plotting
-        if self.args.save or self.args.save_crop or self.args.show:
+        if (
+            self.args.save or self.args.save_crop or self.args.show
+        ) and self.args.focus_identity is None:
             self.annotator.masks(
                 mask,
                 colors=[colors(x, True) for x in det[:, 5]],
@@ -289,7 +296,14 @@ class SegmentationPredictor(DetectionPredictor):
             identities = outputs[:, -2]
             object_id = outputs[:, -1]
             if self.args.save or self.args.save_crop or self.args.show:
-                draw_boxes(im0, bbox_xyxy, self.model.names, object_id, identities)
+                draw_boxes(
+                    im0,
+                    bbox_xyxy,
+                    self.model.names,
+                    object_id,
+                    identities=identities,
+                    focus_identity=self.args.focus_identity,
+                )
             self.deepsort_outputs.append(
                 {
                     "bbox_xyxy": bbox_xyxy.tolist(),
@@ -299,8 +313,8 @@ class SegmentationPredictor(DetectionPredictor):
             )
         return log_string
 
-    def save_deepsort_outputs(self, filename="deepsort_outputs.json"):
-        with open(filename, "w") as f:
+    def save_deepsort_outputs(self):
+        with open(self.args.deepsort_outputs_filename, "w") as f:
             json.dump(
                 {
                     "object_id_names": list(self.model.names.values()),
@@ -321,7 +335,7 @@ def predict(cfg):
     cfg.model = cfg.model or "yolov8n-seg.pt"
     cfg.imgsz = check_imgsz(cfg.imgsz, min_dim=2)  # check image size
     # cfg.source = cfg.source if cfg.source is not None else ROOT / "assets"
-    cfg.source = "/Users/charlesparker/github/YOLOv8_Segmentation_DeepSORT_Object_Tracking/ungitable/test1.mp4"
+    # cfg.source = "../../../../ungitable/test1.mp4"
 
     predictor = SegmentationPredictor(cfg)
     predictor()

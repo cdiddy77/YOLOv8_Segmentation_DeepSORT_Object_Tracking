@@ -82,9 +82,19 @@ class TrackedObjects(BaseModel):
     object_id_names: list[str] = Field(..., description="List of object id names")
 
 
-class HeuristicalAnalytics(BaseModel):
-    farthest_traveler: int = Field(..., description="Identity of the farthest traveler")
-    max_bat_intersect: int = Field(..., description="Identity of the max bat intersect")
-    farthest_consecutive_right: int = Field(
-        ..., description="Identity of the object moving farthest consecutive right"
+class HeuristicalScores(BaseModel):
+    farthest_travelers: dict[int, float] = Field(
+        ..., description="top n farthest travelers"
+    )
+    max_bat_intersects: dict[int, float] = Field(
+        ..., description="top n max bat intersects"
+    )
+    farthest_consecutive_rights: dict[int, tuple[float, int]] = Field(
+        ..., description="top n farthest consecutive rights"
+    )
+    bottom_of_view_first_frame: dict[int, float] = Field(
+        ..., description="top n bottom of view first frame"
+    )
+    overall: dict[int, float] = Field(
+        ..., description="Overall score for each identity"
     )

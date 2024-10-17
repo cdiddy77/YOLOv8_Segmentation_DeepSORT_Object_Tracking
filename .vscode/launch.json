@@ -2,6 +2,20 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "streamlit page1",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/.venv/bin/streamlit",
+            "console": "integratedTerminal",
+            "args": [
+                "run",
+                "pages/page1.py",
+                "--server.runOnSave",
+                "true"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "segment predict",
             "type": "debugpy",
             "request": "launch",
@@ -9,7 +23,8 @@
             "console": "integratedTerminal",
             "args": [
                 "model=yolov8x-seg.pt",
-                "source=\"${workspaceFolder}/ungitable/test1.mp4\""
+                "source=\"${workspaceFolder}/ungitable/test1.mp4\"",
+                "max_frames=100"
             ],
             "cwd": "${workspaceFolder}/ultralytics/yolo/v8/segment"
         },
@@ -22,7 +37,7 @@
             "cwd": "${workspaceFolder}",
             "args": [
                 "--input",
-                "ungitable/deepsort_outputs.json",
+                "ultralytics/yolo/v8/segment/deepsort_outputs.json",
                 "--output",
                 "ungitable/processed.json"
             ]
