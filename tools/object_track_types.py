@@ -21,6 +21,15 @@ class DeepsortOutput(BaseModel):
     object_id_names: list[str] = Field(..., description="List of object id names")
 
 
+class VideoExtraData(BaseModel):
+    home_plate: list[float] = Field(
+        ..., description="Home plate coordinates in format [x, y]"
+    )
+    first_base: list[float] = Field(
+        ..., description="First base coordinates in format [x, y]"
+    )
+
+
 class TrackedObjectFrame(BaseModel):
     video_frame_index: int = Field(
         ..., description="Frame index from the original video"
@@ -42,20 +51,47 @@ class TrackedObjectFrame(BaseModel):
 Tags = Literal["farthest_traveler", "max_bat_intersect", "farthest_right"]
 
 
+class BasesEntry(BaseModel):
+    file: str = Field(..., description="File name")
+    home_pos: list[float] = Field(
+        ..., description="Home plate position", alias="homePos"
+    )
+    first_pos: list[float] = Field(
+        ..., description="First base position", alias="firstPos"
+    )
+
+
+class BasesData(BaseModel):
+    entries: list[BasesEntry] = Field(..., description="List of bases entries")
+
+
 class MovementSequence(BaseModel):
-    initial_frame: int = Field(..., description="Initial frame of the sequence")
+    initial_video_frame: int = Field(..., description="Initial frame of the sequence")
     count: int = Field(..., description="Number of frames in the sequence")
+
+
+class SumMovementSequence(MovementSequence):
     sum: float = Field(
         ..., description="Sum of the directional movement in the sequence"
     )
 
 
-class TrackedObject(BaseModel):
+class SimpleTrackedObject(BaseModel):
     identity: int = Field(..., description="Identity of the object")
     object_id: int = Field(..., description="Object id")
     frames: list[TrackedObjectFrame] = Field(
         ..., description="List of frames with bounding boxes"
     )
+
+
+class SimpleTrackedObjects(BaseModel):
+    objects: dict[int, SimpleTrackedObject] = Field(
+        ..., description="List of tracked objects"
+    )
+    object_id_names: list[str] = Field(..., description="List of object id names")
+
+
+class TrackedObject(SimpleTrackedObject):
     tags: list[Tags] = Field(..., description="List of tags")
     travel_distance: Optional[float] = Field(..., description="Travel distance")
     travel_bbox: Optional[list[float]] = Field(
@@ -67,12 +103,13 @@ class TrackedObject(BaseModel):
     count_bat_intersect_area: Optional[int] = Field(
         ..., description="Number of bat intersections"
     )
-    longest_rightward_sequence: Optional[MovementSequence] = Field(
+    longest_rightward_sequence: Optional[SumMovementSequence] = Field(
         ..., description="Longest rightward sequence"
     )
-    longest_leftward_sequence: Optional[MovementSequence] = Field(
+    longest_leftward_sequence: Optional[SumMovementSequence] = Field(
         ..., description="Longest leftward sequence"
     )
+    avg_bbox_area: Optional[float] = Field(..., description="Average bounding box area")
 
 
 class TrackedObjects(BaseModel):
@@ -80,6 +117,23 @@ class TrackedObjects(BaseModel):
         ..., description="List of tracked objects"
     )
     object_id_names: list[str] = Field(..., description="List of object id names")
+
+
+class IdValue(BaseModel):
+    id: int = Field(..., description="Identity")
+    value: float = Field(..., description="Value")
+
+
+class UmpireScores(BaseModel):
+    bottom_of_view_first_frame: dict[int, float] = Field(
+        ..., description="top n bottom of view first frame"
+    )
+    avg_bbox_area: dict[int, float] = Field(
+        ..., description="top n average bounding box area"
+    )
+    overall: dict[int, float] = Field(
+        ..., description="Overall score for each identity"
+    )
 
 
 class HeuristicalScores(BaseModel):
@@ -95,6 +149,22 @@ class HeuristicalScores(BaseModel):
     bottom_of_view_first_frame: dict[int, float] = Field(
         ..., description="top n bottom of view first frame"
     )
+    avg_bbox_area: dict[int, float] = Field(
+        ..., description="top n average bounding box area"
+    )
     overall: dict[int, float] = Field(
         ..., description="Overall score for each identity"
     )
+
+
+class TrackingData(BaseModel):
+    deepsort_output: DeepsortOutput = Field(..., description="Deepsort output")
+    longest_a2b_sequences: list[tuple[SimpleTrackedObject, MovementSequence]] = Field(
+        ..., description="Longest A to B movement sequences"
+    )
+    full_sequences: list[tuple[SimpleTrackedObject, MovementSequence]] = Field(
+        ..., description="Full movement sequences"
+    )
+    tracked_objects: SimpleTrackedObjects = Field(..., description="Tracked objects")
+    home_tolerance: int = Field(..., description="Home tolerance")
+    umpire_id: int = Field(..., description="Umpire identity")

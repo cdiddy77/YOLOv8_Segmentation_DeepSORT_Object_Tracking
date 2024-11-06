@@ -5,7 +5,7 @@ import cv2
 import streamlit as st
 import tempfile
 
-from tools.process_objects import process_objects, score_objects
+from tools.process_objects import identify_umpire, process_objects, score_batter_runners
 from tools.object_track_types import DeepsortOutput
 
 print("LOADING PAGE 2")
@@ -35,6 +35,7 @@ def detect_and_render_frame(
     frame_idx: int,
     identities: list[int],
     winning_identity: int,
+    umpire_identity: int,
     deepsort_output: DeepsortOutput,
 ):
     print(f"Frame index: {frame_idx}")
@@ -52,7 +53,13 @@ def detect_and_render_frame(
                 identity_index = deepsort_frame.identities.index(identity)
                 bbox = deepsort_frame.bbox_xyxy[identity_index]
 
-                color = (0, 255, 0) if identity != winning_identity else (255, 0, 0)
+                if identity == umpire_identity:
+                    color = (0, 0, 255)
+                elif identity == winning_identity:
+                    color = (0, 255, 0)
+                else:
+                    color = (255, 0, 0)
+
                 frame = cv2.rectangle(
                     frame,
                     (int(bbox[0]), int(bbox[1])),
@@ -95,20 +102,11 @@ def detect_and_render_frame(
     video_frame_placeholder.image(frame, channels="BGR", caption="Detected Objects")
 
 
+# Set up mouse callback
+
 if selected_video is not None:
     print(selected_video)
     video = cv2.VideoCapture(str(video_dir / selected_video))
-
-    deepsort_output_path = f"{video_dir / selected_video}.deepsort.json"
-    deepsort_output: DeepsortOutput
-    with open(deepsort_output_path, "r") as f:
-        deepsort_output = DeepsortOutput.model_validate_json(f.read())
-    tracked_objects = process_objects(deepsort_output)
-    scores = score_objects(deepsort_output, tracked_objects)
-    print(scores.model_dump_json(indent=2))
-
-    # get the top score and index
-    top_x, top_score = max(scores.overall.items(), key=lambda x: x[1])
 
     fps = int(video.get(cv2.CAP_PROP_FPS))
     total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -117,7 +115,6 @@ if selected_video is not None:
     st.sidebar.write(f"Frames per second (FPS): {fps}")
     st.sidebar.write(f"Total frames: {total_frames}")
     st.sidebar.write(f"Duration (seconds): {duration:.2f}")
-    st.sidebar.write(f"Top scoring object: {top_x}({top_score})")
 
     # Initialize Streamlit slider for frame navigation
     frame_idx = st.slider("Frame", 0, total_frames - 1, 0)
@@ -135,6 +132,24 @@ if selected_video is not None:
     # Set video to the frame at the slider position
     video.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
     success, frame = video.read()
+
+    deepsort_output_path = f"{video_dir / selected_video}.deepsort.json"
+    deepsort_output: DeepsortOutput
+    with open(deepsort_output_path, "r") as f:
+        deepsort_output = DeepsortOutput.model_validate_json(f.read())
+    tracked_objects = process_objects(deepsort_output)
+    all_identities = list(tracked_objects.objects.keys())
+    umpire_scores, umpire_id = identify_umpire(
+        deepsort_output, tracked_objects, (frame.shape[1], frame.shape[0])
+    )
+    scores = score_batter_runners(deepsort_output, tracked_objects, exclude=[umpire_id])
+    print("umpire scores", umpire_scores.model_dump_json(indent=2))
+    print("scores", scores.model_dump_json(indent=2))
+
+    # get the top score and index
+    top_x, top_score = max(scores.overall.items(), key=lambda x: x[1])
+    print(f"batter: {top_x}({top_score})")
+    print(f"umpire: {umpire_id}({umpire_scores.overall[umpire_id]})")
 
     if st.session_state.playing:
         while st.session_state.playing:
@@ -159,9 +174,10 @@ if selected_video is not None:
                     frame,
                     video_frame_placeholder,
                     frame_idx,
-                    list(scores.overall.keys()),
+                    all_identities,
                     top_x,
-                    deepsort_output,
+                    umpire_identity=umpire_id,
+                    deepsort_output=deepsort_output,
                 )
             else:
                 st.write("Unable to read frame from video.")
@@ -174,9 +190,10 @@ if selected_video is not None:
             frame,
             video_frame_placeholder,
             frame_idx,
-            list(scores.overall.keys()),
+            all_identities,
             top_x,
-            deepsort_output,
+            umpire_identity=umpire_id,
+            deepsort_output=deepsort_output,
         )
 
     # Release the video when done

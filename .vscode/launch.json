@@ -16,6 +16,20 @@
             "cwd": "${workspaceFolder}"
         },
         {
+            "name": "streamlit runs_to_first",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/.venv/bin/streamlit",
+            "console": "integratedTerminal",
+            "args": [
+                "run",
+                "pages/runs_to_first.py",
+                "--server.runOnSave",
+                "true"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "segment predict",
             "type": "debugpy",
             "request": "launch",
