@@ -1,89 +1,20 @@
-import math
 import os
 from pathlib import Path
-import time
 import cv2
 import streamlit as st
-import tempfile
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from pages.edit_frame import detect_and_render_frame
 from tools.find_paths import (
-    all_movement,
-    create_tracked_objects,
-    find_all_uar_sequences,
-    find_longest_a2b_sequence,
+    build_clip_prediction,
+    build_tracking_data,
 )
-from tools.process_objects import identify_umpire, process_objects, score_batter_runners
 from tools.object_track_types import (
     BasesData,
-    BasesEntry,
-    DeepsortOutput,
-    MovementSequence,
-    SimpleTrackedObject,
-    SimpleTrackedObjects,
     TrackingData,
 )
-from tools.utils import (
-    distance_between_points,
-    get_first_and_last_points,
-    get_last_video_frame_index,
-    get_np_points,
-)
-
-
-def build_tracking_data(
-    deepsort_file: str,
-    bases_data: BasesEntry,
-    home_tolerance: float,
-    auto_home_tolerance: bool,
-    first_tolerance: float,
-    frame,
-) -> TrackingData:
-    deepsort_output: DeepsortOutput
-    with open(deepsort_file, "r") as f:
-        deepsort_output = DeepsortOutput.model_validate_json(f.read())
-    tracked_objects = create_tracked_objects(deepsort_output)
-    umpire_id = -1
-    if auto_home_tolerance:
-        rich_tracked_objects = process_objects(deepsort_output)
-        umpire_scores, umpire_id = identify_umpire(
-            deepsort_output, rich_tracked_objects, (frame.shape[1], frame.shape[0])
-        )
-        avg_area = rich_tracked_objects.objects[umpire_id].avg_bbox_area or 0
-        # home tolerance is such that the area of the circle defined by a radius = home tolerance
-        # is equal to the avg area of the umpire bounding boxes
-        # compute the radius of the circle from the area
-        home_tolerance = math.sqrt(avg_area / math.pi)
-        # home_tolerance = sqrt(avg_area) if avg_area is not None else home_tolerance
-        print(f"Auto home tolerance: {home_tolerance}")
-
-    longest_a2b_sequences: list[tuple[SimpleTrackedObject, MovementSequence]] = []
-    for obj in tracked_objects.objects.values():
-        seq = find_longest_a2b_sequence(
-            obj=obj,
-            step=1,
-            pt_a=bases_data.home_pos,
-            pt_b=bases_data.first_pos,
-            pt_a_tolerance=home_tolerance,
-            pt_b_tolerance=first_tolerance,
-        )
-        if seq is not None:
-            longest_a2b_sequences.append((obj, seq))
-
-    full_sequences: list[tuple[SimpleTrackedObject, MovementSequence]] = [
-        (obj, all_movement(obj, step=1)[0]) for obj in tracked_objects.objects.values()
-    ]
-
-    return TrackingData(
-        deepsort_output=deepsort_output,
-        longest_a2b_sequences=longest_a2b_sequences,
-        full_sequences=full_sequences,
-        tracked_objects=tracked_objects,
-        home_tolerance=int(home_tolerance),
-        umpire_id=umpire_id,
-    )
-
+from tools.process_objects import measure_movement
 
 st.set_page_config(layout="wide")
 # Initialize the YOLOv8 model
@@ -97,22 +28,14 @@ video_dir = Path("ungitable/video")
 
 # List all .mp4 files in the directory
 video_files = [f for f in os.listdir(video_dir) if f.endswith(".mp4")]
+video_files.sort()
+print(video_files[:10])
 
 # Select video file
 selected_video = st.sidebar.radio("Choose a video...", video_files)
 # selected_video = st.sidebar.selectbox(
 #     "Choose a video...", video_files, format_func=lambda x: x
 # )
-
-# load bases as a list of BaseEntry
-bases: BasesData
-with open("ungitable/bases.json", "r") as bases_file:
-    bases = BasesData.model_validate_json(bases_file.read())
-
-# create a dictionary where each key is the file field from bases.entries
-# and the value is the BasesEntry object
-bases_dict = {entry.file: entry for entry in bases.entries}
-
 
 # Set up mouse callback
 selected_identities = []
@@ -122,7 +45,7 @@ if "frame_idx" not in st.session_state:
 if selected_video is not None:
     video = cv2.VideoCapture(str(video_dir / selected_video))
 
-    fps = int(video.get(cv2.CAP_PROP_FPS))
+    fps = video.get(cv2.CAP_PROP_FPS)
     total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
     duration = total_frames / fps
 
@@ -130,8 +53,8 @@ if selected_video is not None:
     st.sidebar.write(f"Total frames: {total_frames}")
     st.sidebar.write(f"Duration (seconds): {duration:.2f}")
 
-    frame_cols = st.columns([1, 1, 10], vertical_alignment="center")
-
+    frame_cols = st.columns([1, 1, 10, 1], vertical_alignment="center")
+    # movement_chart_placeholder = st.empty()
     # Initialize Streamlit slider for frame navigation
     with frame_cols[0]:
         if st.button("<<"):
@@ -149,11 +72,15 @@ if selected_video is not None:
             step=1,
             value=st.session_state.frame_idx,
         )
+        movement_chart_placeholder = st.empty()
+
+    with frame_cols[3]:
+        st.write(f"ts: {st.session_state.frame_idx / fps:.2f}")
     tolerance_cols = st.columns([1, 0.5, 1.5], vertical_alignment="center")
     with tolerance_cols[0]:
         home_tolerance = st.slider("Home Plate Tolerance", 0, 400, 150, 5)
     with tolerance_cols[1]:
-        auto_home_tolerance = st.checkbox("Auto Home Tolerance")
+        auto_home_tolerance = st.checkbox("Auto Home Tolerance", value=True)
 
     with tolerance_cols[2]:
         first_tolerance = st.slider("First Base Tolerance", 0, 400, 25, 5)
@@ -170,8 +97,13 @@ if selected_video is not None:
 
     # checkbox whether to display bounding boxes
     with filter_cols[1]:
-        display_bounding_boxes = st.checkbox("Display Bounding Boxes", value=True)
-        home_to_first = st.checkbox("Home to First", value=True)
+        cb_cols = st.columns([1, 1, 1], vertical_alignment="center")
+        with cb_cols[0]:
+            display_bounding_boxes = st.checkbox("Display Bounding Boxes", value=True)
+        with cb_cols[1]:
+            home_to_first = st.checkbox("Home to First", value=True)
+        with cb_cols[2]:
+            a2b_or_exit = st.checkbox("A2B or Exit", value=True)
 
     video_frame_placeholder = st.empty()
 
@@ -190,32 +122,70 @@ if selected_video is not None:
     video.set(cv2.CAP_PROP_POS_FRAMES, st.session_state.frame_idx)
     success, frame = video.read()
 
+    # get the video width and height
+    frame_width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
     deepsort_output_path = f"{video_dir / selected_video}.deepsort.json"
+    annotation_path = f"{video_dir / selected_video.split('.')[0]}.annotation.json"
 
     if "tracking_data" not in st.session_state:
         st.session_state.tracking_data = {"key": "uninitialized", "value": None}
 
-    current_key = f"{deepsort_output_path}:home_tolerance:{home_tolerance}:first_tolerance:{first_tolerance}:auto_home_tolerance:{auto_home_tolerance}"
+    current_key = f"{deepsort_output_path}:home_tolerance:{home_tolerance}:first_tolerance:{first_tolerance}:auto_home_tolerance:{auto_home_tolerance}:a2b_or_exit:{a2b_or_exit}"
     if st.session_state.tracking_data["key"] != current_key:
         st.session_state.tracking_data["key"] = current_key
         st.session_state.tracking_data["value"] = build_tracking_data(
             deepsort_file=deepsort_output_path,
-            bases_data=bases_dict[selected_video],
-            home_tolerance=home_tolerance,
-            auto_home_tolerance=auto_home_tolerance,
-            first_tolerance=first_tolerance,
-            frame=frame,
+            annotation_file=annotation_path,
+            home_radius=home_tolerance,
+            auto_home_radius=auto_home_tolerance,
+            first_radius=first_tolerance,
+            frame_width=frame_width,
+            frame_height=frame_height,
         )
 
     tracking_data: TrackingData = st.session_state.tracking_data["value"]
     filtered_sequences = (
-        tracking_data.longest_a2b_sequences
+        (
+            tracking_data.longest_a2b_sequences
+            if a2b_or_exit
+            else tracking_data.longest_exiting_sequences
+        )
         if home_to_first
         else tracking_data.full_sequences
     )
     deepsort_output = tracking_data.deepsort_output
     tracked_objects = tracking_data.tracked_objects
     print(f"filtered_sequences: {len(filtered_sequences)}")
+    clip_prediction = build_clip_prediction(tracking_data, fps)
+    print(f"clip_prediction: {clip_prediction}")
+
+    raw_df = pd.DataFrame(
+        {
+            "Frame": range(1, len(deepsort_output.frames)),
+            "Movement": tracking_data.movement,
+        }
+    )
+
+    # make a dataframe which has movement aggregated by batches of 10 frames and the
+    # first column is the time in seconds
+    batch_size = int(fps)
+    batched_df = pd.DataFrame(
+        {
+            "Time": [
+                round(i / fps, 2)
+                for i in range(0, len(deepsort_output.frames) - batch_size, batch_size)
+            ],
+            "Movement": [
+                sum(tracking_data.movement[i : i + batch_size])
+                for i in range(0, len(deepsort_output.frames) - batch_size, batch_size)
+            ],
+        }
+    )
+    movement_chart_placeholder.bar_chart(
+        batched_df, x="Time", y="Movement", height=200, y_label=""
+    )
 
     # filtered_sequences = uar_sequences
 
@@ -227,7 +197,7 @@ if selected_video is not None:
                 "index": i,
                 "identifer": seq[0].identity,
                 "first_frame": seq[1].initial_video_frame,
-                "last_frame": get_last_video_frame_index(seq),
+                "last_frame": seq[1].final_video_frame,
             }
             for i, seq in enumerate(filtered_sequences)
         ]
@@ -258,8 +228,7 @@ if selected_video is not None:
         selected_indexes=selected_indexes,
         home_tolerance=tracking_data.home_tolerance,
         first_tolerance=first_tolerance,
-        bases_dict=bases_dict,
-        selected_video=selected_video,
+        annotation=tracking_data.annotation,
         filtered_identities=filtered_identities,
         display_bounding_boxes=display_bounding_boxes,
         tracked_objects=tracked_objects,

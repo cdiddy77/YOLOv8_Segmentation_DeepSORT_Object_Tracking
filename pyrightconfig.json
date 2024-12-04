@@ -1,0 +1,16 @@
+{
+    "typeCheckingMode": "basic",
+    "reportInvalidStringEscapeSequence": "none",
+    "include": [
+        "**/*.py"
+    ],
+    "exclude": [
+        "**/site-packages/**",
+        "**/.venv/**",
+        "**/notebooks/**",
+        "ultralytics/**",
+        "setup.py",
+    ],
+    "venvPath": "./",
+    "venv": ".venv",
+}

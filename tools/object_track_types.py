@@ -53,10 +53,10 @@ Tags = Literal["farthest_traveler", "max_bat_intersect", "farthest_right"]
 
 class BasesEntry(BaseModel):
     file: str = Field(..., description="File name")
-    home_pos: list[float] = Field(
+    home_pos_xy: list[float] = Field(
         ..., description="Home plate position", alias="homePos"
     )
-    first_pos: list[float] = Field(
+    first_pos_xy: list[float] = Field(
         ..., description="First base position", alias="firstPos"
     )
 
@@ -65,9 +65,30 @@ class BasesData(BaseModel):
     entries: list[BasesEntry] = Field(..., description="List of bases entries")
 
 
+class Annotation(BaseModel):
+    home_pos_xy: list[float] = Field(
+        ..., description="Home plate position", alias="homePos"
+    )
+    first_pos_xy: list[float] = Field(
+        ..., description="First base position", alias="firstPos"
+    )
+    contact_time: Optional[float] = Field(
+        description="Contact time",
+        alias="contactTime",
+        default=None,
+    )
+
+
 class MovementSequence(BaseModel):
     initial_video_frame: int = Field(..., description="Initial frame of the sequence")
+    initial_object_frame: int = Field(
+        ..., description="Initial object frame of the sequence"
+    )
     count: int = Field(..., description="Number of frames in the sequence")
+    final_object_frame: int = Field(
+        ..., description="Final object frame of the sequence"
+    )
+    final_video_frame: int = Field(..., description="Final frame of the sequence")
 
 
 class SumMovementSequence(MovementSequence):
@@ -159,8 +180,12 @@ class HeuristicalScores(BaseModel):
 
 class TrackingData(BaseModel):
     deepsort_output: DeepsortOutput = Field(..., description="Deepsort output")
+    annotation: Annotation = Field(..., description="Annotation")
     longest_a2b_sequences: list[tuple[SimpleTrackedObject, MovementSequence]] = Field(
         ..., description="Longest A to B movement sequences"
+    )
+    longest_exiting_sequences: list[tuple[SimpleTrackedObject, MovementSequence]] = (
+        Field(..., description="Longest exiting movement sequences")
     )
     full_sequences: list[tuple[SimpleTrackedObject, MovementSequence]] = Field(
         ..., description="Full movement sequences"
@@ -168,3 +193,11 @@ class TrackingData(BaseModel):
     tracked_objects: SimpleTrackedObjects = Field(..., description="Tracked objects")
     home_tolerance: int = Field(..., description="Home tolerance")
     umpire_id: int = Field(..., description="Umpire identity")
+    movement: list[float] = Field(..., description="Movement vector")
+
+
+class ObjectTrackingPrediction(BaseModel):
+    contact_moment: float = Field(..., description="Contact moment")
+    event_type: Literal["hit", "no-hit", "unknown"] = Field(
+        ..., description="Event type"
+    )

@@ -311,6 +311,7 @@ class SegmentationPredictor(DetectionPredictor):
                     "object_id": object_id.tolist(),
                 }
             )
+        print(log_string)
         return log_string
 
     def save_deepsort_outputs(self):

@@ -5,7 +5,6 @@ import json
 from tools.object_track_types import (
     DeepsortOutput,
     HeuristicalScores,
-    SimpleTrackedObjects,
     TrackedObject,
     TrackedObjectFrame,
     TrackedObjects,
@@ -15,6 +14,7 @@ from tools.utils import (
     calculate_avg_bbox_area,
     calculate_travel_bbox,
     calculate_travel_distance,
+    distance_between_bboxes,
     intersection_area,
     is_bbox_contained_in_bbox,
     longest_sequence,
@@ -322,6 +322,46 @@ def score_batter_runners(
     #     farthest_consecutive_right=farthest_consecutive_right.identity,
     # )
     # print(analytics.model_dump_json(indent=2))
+
+
+def measure_movement(
+    deepsort_output: DeepsortOutput,
+    frame_index: int,
+) -> float:
+    if frame_index == 0:
+        return 0.0
+    frame = deepsort_output.frames[frame_index]
+    prev_frame = deepsort_output.frames[frame_index - 1]
+
+    # for each of the identities in identity, create a map of the index
+    # of the identity in this frame to the index of the identity in the previous frame
+    identity_map = {}
+    for i, identity in enumerate(frame.identities):
+        if identity not in identity_map:
+            identity_map[identity] = []
+        identity_map[identity].append(i)
+    prev_identity_map = {}
+    for i, identity in enumerate(prev_frame.identities):
+        if identity not in prev_identity_map:
+            prev_identity_map[identity] = []
+        prev_identity_map[identity].append(i)
+
+    movement = 0.0
+
+    # not_in_prev_frame = set(identity_map.keys()) - set(prev_identity_map.keys())
+    # not_in_this_frame = set(prev_identity_map.keys()) - set(identity_map.keys())
+
+    for identity in identity_map:
+        # for now we don't consider identities that are not in the previous frame
+        # nor do we consider identities that were in the previous frame but not in this frame
+        if identity not in prev_identity_map:
+            continue
+        for i, j in zip(identity_map[identity], prev_identity_map[identity]):
+            movement += distance_between_bboxes(
+                frame.bbox_xyxy[i], prev_frame.bbox_xyxy[j]
+            )
+
+    return movement
 
 
 # write the output file

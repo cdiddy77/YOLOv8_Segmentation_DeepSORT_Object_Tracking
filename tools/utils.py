@@ -120,7 +120,12 @@ def longest_sequence(
             current_sum = 0.0
     return SumMovementSequence(
         initial_video_frame=frames[longest_start].video_frame_index,
+        initial_object_frame=longest_start,
         count=longest_sequence,
+        final_object_frame=longest_start + longest_sequence - 1,
+        final_video_frame=frames[
+            longest_start + longest_sequence - 1
+        ].video_frame_index,
         sum=longest_sum,
     )
 
@@ -143,7 +148,12 @@ def all_sequences(
                 sequences.append(
                     MovementSequence(
                         initial_video_frame=frames[current_start].video_frame_index,
+                        initial_object_frame=current_start,
                         count=current_sequence,
+                        final_object_frame=current_start + current_sequence - 1,
+                        final_video_frame=frames[
+                            current_start + current_sequence - 1
+                        ].video_frame_index,
                     )
                 )
             current_sequence = 0
@@ -152,7 +162,12 @@ def all_sequences(
         sequences.append(
             MovementSequence(
                 initial_video_frame=frames[current_start].video_frame_index,
+                initial_object_frame=current_start,
                 count=current_sequence,
+                final_object_frame=current_start + current_sequence - 1,
+                final_video_frame=frames[
+                    current_start + current_sequence - 1
+                ].video_frame_index,
             )
         )
     return sequences
@@ -184,51 +199,49 @@ def frame_moves_right_or_up(
     ) or (frame_moves_up(frame, next_frame) and not frame_moves_left(frame, next_frame))
 
 
-def find_tracked_object_frame_index_for_video_frame_index(
-    tracked_object: SimpleTrackedObject, video_frame_index: int
-) -> int:
-    for i, frame in enumerate(tracked_object.frames):
-        if frame.video_frame_index == video_frame_index:
-            return i
-    return -1
+# def find_tracked_object_frame_index_for_video_frame_index(
+#     tracked_object: SimpleTrackedObject, video_frame_index: int
+# ) -> int:
+#     for i, frame in enumerate(tracked_object.frames):
+#         if frame.video_frame_index == video_frame_index:
+#             return i
+#     return -1
 
 
-def get_first_and_last_frame_indexes(
-    object_path: tuple[SimpleTrackedObject, MovementSequence]
-):
-    obj = object_path[0]
-    movement_sequence = object_path[1]
-    first_tof = find_tracked_object_frame_index_for_video_frame_index(
-        obj, movement_sequence.initial_video_frame
-    )
-    last_tof = first_tof + movement_sequence.count - 1
-    return first_tof, last_tof
+# def get_first_and_last_frame_indexes(
+#     object_path: tuple[SimpleTrackedObject, MovementSequence]
+# ):
+#     obj = object_path[0]
+#     movement_sequence = object_path[1]
+#     first_tof = find_tracked_object_frame_index_for_video_frame_index(
+#         obj, movement_sequence.initial_video_frame
+#     )
+#     last_tof = first_tof + movement_sequence.count - 1
+#     return first_tof, last_tof
 
 
-def get_last_video_frame_index(
-    object_path: tuple[SimpleTrackedObject, MovementSequence]
-):
-    first_tof, last_tof = get_first_and_last_frame_indexes(object_path)
-    return object_path[0].frames[last_tof].video_frame_index
+# def get_last_video_frame_index(
+#     object_path: tuple[SimpleTrackedObject, MovementSequence]
+# ):
+#     first_tof, last_tof = get_first_and_last_frame_indexes(object_path)
+#     return object_path[0].frames[last_tof].video_frame_index
 
 
 def get_first_and_last_points(
     object_path: tuple[SimpleTrackedObject, MovementSequence]
 ):
     obj = object_path[0]
-    first_tof, last_tof = get_first_and_last_frame_indexes(object_path)
+    seq = object_path[1]
     return (
-        baseline_midpoint(obj.frames[first_tof].bbox_xyxy),
-        baseline_midpoint(obj.frames[last_tof].bbox_xyxy),
+        baseline_midpoint(obj.frames[seq.initial_object_frame].bbox_xyxy),
+        baseline_midpoint(obj.frames[seq.final_object_frame].bbox_xyxy),
     )
 
 
 def get_np_points(object_path: tuple[SimpleTrackedObject, MovementSequence]):
     obj = object_path[0]
     movement_sequence = object_path[1]
-    first_tof = find_tracked_object_frame_index_for_video_frame_index(
-        obj, movement_sequence.initial_video_frame
-    )
+    first_tof = movement_sequence.initial_object_frame
     all_points = [
         baseline_midpoint(frame.bbox_xyxy)
         for frame in obj.frames[first_tof : first_tof + movement_sequence.count]

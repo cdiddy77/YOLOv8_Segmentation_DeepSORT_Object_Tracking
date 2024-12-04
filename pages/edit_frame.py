@@ -1,5 +1,6 @@
 import cv2
 from tools.object_track_types import (
+    Annotation,
     BasesEntry,
     DeepsortOutput,
     MovementSequence,
@@ -32,8 +33,7 @@ def detect_and_render_frame(
     tracked_objects: SimpleTrackedObjects,
     home_tolerance: int,
     first_tolerance: int,
-    bases_dict: dict[str, BasesEntry],
-    selected_video: str,
+    annotation: Annotation,
     filtered_identities: list[int],
     display_bounding_boxes: bool,
     umpire_identity: int,
@@ -77,8 +77,8 @@ def detect_and_render_frame(
                 # else:
                 #     print(f"Identity {identity} not found in frame {frame_idx}")
     # draw a circle of radius home_tolerance around home plate
-    home_pos = bases_dict[selected_video].home_pos
-    first_pos = bases_dict[selected_video].first_pos
+    home_pos = annotation.home_pos_xy
+    first_pos = annotation.first_pos_xy
     frame = cv2.circle(
         frame,
         (int(home_pos[0]), int(home_pos[1])),
